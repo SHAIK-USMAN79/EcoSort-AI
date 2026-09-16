@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EcoSort AI — Smart Waste Segregation & Recycling Assistant</title>
+<meta name="description" content="EcoSort AI classifies your waste from images or text, tells you the right bin, explains why, and flags e-waste and hazardous items with special handling instructions." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+        colors: {
+          eco: { 50:'#f0fdf6',100:'#dcfcea',200:'#bbf7d6',300:'#86efb6',400:'#4ade8f',500:'#22c56e',600:'#16a356',700:'#158047',800:'#16653b',900:'#145332' }
+        },
+        keyframes: {
+          float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-14px)' } },
+          fadeUp: { '0%': { opacity: 0, transform: 'translateY(18px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+          scan: { '0%': { top: '0%' }, '100%': { top: '100%' } },
+          pulseRing: { '0%': { transform:'scale(.9)', opacity:.8 }, '100%': { transform:'scale(1.6)', opacity:0 } }
+        },
+        animation: {
+          float: 'float 6s ease-in-out infinite',
+          fadeUp: 'fadeUp .6s ease-out both',
+          scan: 'scan 1.6s linear infinite',
+          pulseRing: 'pulseRing 1.6s ease-out infinite'
+        }
+      }
+    }
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --grad: linear-gradient(135deg,#16a356 0%,#0ea5a4 50%,#2563eb 100%); }
+  body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; background:#f6fbf8; }
+  .gradient-text { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .gradient-bg { background: var(--grad); }
+  .glass { background: rgba(255,255,255,.75); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .card { background:#fff; border:1px solid rgba(20,83,50,.08); box-shadow: 0 10px 30px -12px rgba(20,83,50,.15); border-radius: 1.25rem; transition: transform .25s ease, box-shadow .25s ease; }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -14px rgba(20,83,50,.22); }
+  .dropzone { border:2px dashed #86efb6; transition: all .25s ease; }
+  .dropzone.dragover { border-color:#16a356; background:#dcfcea; transform: scale(1.01); }
+  .scanline { position:absolute; left:0; right:0; height:3px; background: linear-gradient(90deg, transparent, #22c56e, transparent); box-shadow:0 0 14px #22c56e; }
+  .reveal { opacity:0; transform: translateY(22px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.visible { opacity:1; transform:none; }
+  .chip { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .7rem; border-radius:999px; font-size:.75rem; font-weight:600; }
+  pre.code { background:#0f172a; color:#e2e8f0; border-radius:1rem; padding:1rem 1.25rem; font-size:.8rem; overflow-x:auto; line-height:1.6; }
+  pre.code .c { color:#64748b } pre.code .k { color:#7dd3fc } pre.code .s { color:#86efac } pre.code .f { color:#fcd34d }
+  .bar { height:8px; border-radius:999px; background:#e5f5ec; overflow:hidden; }
+  .bar > div { height:100%; border-radius:999px; background: var(--grad); width:0; transition: width 1s cubic-bezier(.2,.8,.2,1); }
+  .chat-scroll::-webkit-scrollbar { width:6px } .chat-scroll::-webkit-scrollbar-thumb { background:#bbf7d6; border-radius:999px }
+  .bin-blue { background:#2563eb } .bin-green { background:#16a356 } .bin-gray { background:#475569 } .bin-red { background:#dc2626 } .bin-yellow { background:#f59e0b } .bin-brown { background:#92400e } .bin-purple { background:#7c3aed }
+  .tab-btn.active { background: var(--grad); color:#fff; box-shadow:0 8px 20px -8px rgba(22,163,86,.6); }
+  .step-line::before { content:''; position:absolute; left:1.35rem; top:3rem; bottom:-1rem; width:2px; background:linear-gradient(#bbf7d6,transparent); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body class="text-slate-800 antialiased">
+
+<!-- NAV -->
+<header class="fixed top-0 inset-x-0 z-50">
+  <nav class="glass border-b border-eco-100/70">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <a href="#top" class="flex items-center gap-2.5">
+        <span class="w-9 h-9 rounded-xl gradient-bg grid place-items-center text-white shadow-lg shadow-eco-500/30">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.56"/><path d="M21 3v6h-6"/><path d="M12 8v4l2.5 2.5"/></svg>
+        </span>
+        <span class="font-extrabold text-lg tracking-tight">EcoSort <span class="gradient-text">AI</span></span>
+      </a>
+      <div class="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
+        <a href="#classify" class="hover:text-eco-600 transition">Classify</a>
+        <a href="#ask" class="hover:text-eco-600 transition">Ask</a>
+        <a href="#categories" class="hover:text-eco-600 transition">Categories</a>
+        <a href="#knowledge" class="hover:text-eco-600 transition">Knowledge Base</a>
+        <a href="#roadmap" class="hover:text-eco-600 transition">Build Stages</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="backendStatus" class="hidden sm:inline-flex chip bg-slate-100 text-slate-600"><span class="w-2 h-2 rounded-full bg-slate-400"></span>Checking backend…</span>
+        <button id="menuBtn" class="md:hidden p-2 rounded-lg hover:bg-eco-50" aria-label="Menu">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="md:hidden hidden border-t border-eco-100 px-4 py-3 flex flex-col gap-2 text-sm font-medium">
+      <a href="#classify" class="py-2 hover:text-eco-600">Classify</a>
+      <a href="#ask" class="py-2 hover:text-eco-600">Ask</a>
+      <a href="#categories" class="py-2 hover:text-eco-600">Categories</a>
+      <a href="#knowledge" class="py-2 hover:text-eco-600">Knowledge Base</a>
+      <a href="#roadmap" class="py-2 hover:text-eco-600">Build Stages</a>
+    </div>
+  </nav>
+</header>
+
+<!-- HERO -->
+<section id="top" class="relative pt-28 md:pt-36 pb-20 overflow-hidden">
+  <div class="absolute inset-0 -z-10">
+    <div class="absolute -top-32 -left-32 w-[32rem] h-[32rem] rounded-full bg-eco-300/40 blur-3xl"></div>
+    <div class="absolute top-20 -right-40 w-[34rem] h-[34rem] rounded-full bg-sky-300/40 blur-3xl"></div>
+    <div class="absolute bottom-0 left-1/3 w-[26rem] h-[26rem] rounded-full bg-teal-200/40 blur-3xl"></div>
+  </div>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-14 items-center">
+    <div class="animate-fadeUp">
+      <span class="chip bg-eco-100 text-eco-800 mb-5"><span class="w-2 h-2 rounded-full bg-eco-500 animate-pulse"></span> Image + Text AI · RAG Knowledge Base</span>
+      <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.08]">
+        Sort waste right, <span class="gradient-text">every single time.</span>
+      </h1>
+      <p class="mt-6 text-lg text-slate-600 max-w-xl">Upload a photo or describe an item. EcoSort AI classifies it, recommends the correct bin, explains the reasoning, and flags e‑waste or hazardous materials that need special handling.</p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a href="#classify" class="inline-flex items-center gap-2 gradient-bg text-white font-semibold px-6 py-3.5 rounded-2xl shadow-xl shadow-eco-500/30 hover:-translate-y-0.5 transition">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/><path d="M12 4v12"/><path d="m7 9 5-5 5 5"/></svg>
+          Upload waste image
+        </a>
+        <a href="#ask" class="inline-flex items-center gap-2 bg-white text-slate-800 font-semibold px-6 py-3.5 rounded-2xl border border-eco-200 hover:border-eco-400 hover:-translate-y-0.5 transition">Ask a question</a>
+      </div>
+      <div class="mt-10 grid grid-cols-3 gap-4 max-w-md">
+        <div><div class="text-2xl font-extrabold gradient-text" data-count="7">0</div><div class="text-xs text-slate-500 font-medium">Waste categories</div></div>
+        <div><div class="text-2xl font-extrabold gradient-text" data-count="40">0</div><div class="text-xs text-slate-500 font-medium">Disposal rules</div></div>
+        <div><div class="text-2xl font-extrabold gradient-text"><span data-count="98">0</span>%</div><div class="text-xs text-slate-500 font-medium">Explainable results</div></div>
+      </div>
+    </div>
+
+    <!-- Hero visual -->
+    <div class="relative animate-fadeUp" style="animation-delay:.15s">
+      <div class="relative mx-auto max-w-md">
+        <div class="card p-6 relative overflow-hidden">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-sm font-semibold text-slate-500">Live classification</span>
+            <span class="chip bg-eco-100 text-eco-700"><span class="w-2 h-2 rounded-full bg-eco-500 animate-pulse"></span>Model v1.3</span>
+          </div>
+          <div class="relative h-44 rounded-2xl bg-gradient-to-br from-eco-50 to-sky-50 border border-eco-100 grid place-items-center overflow-hidden">
+            <svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="#16a356" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v3"/><path d="M14 2v3"/><path d="M9 5h6l1 3H8z"/><path d="M8 8h8v12a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2z"/><path d="M8 12h8"/></svg>
+            <div class="scanline animate-scan"></div>
+          </div>
+          <div class="mt-5 space-y-3">
+            <div class="flex items-center justify-between text-sm"><span class="font-semibold">Plastic bottle (PET #1)</span><span class="font-bold text-eco-600">96%</span></div>
+            <div class="bar"><div id="heroBar"></div></div>
+            <div class="flex items-center gap-3 pt-1">
+              <span class="w-9 h-9 rounded-xl bin-blue grid place-items-center text-white text-xs font-bold">♻</span>
+              <div><div class="text-sm font-semibold">Recyclables · Blue bin</div><div class="text-xs text-slate-500">Rinse, remove cap, crush to save space</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="absolute -right-6 -top-6 card p-4 animate-float hidden sm:block">
+          <div class="text-xs text-slate-500 font-medium">E‑waste detected</div>
+          <div class="text-sm font-bold text-red-600">⚠ Special drop‑off</div>
+        </div>
+        <div class="absolute -left-8 bottom-6 card p-4 animate-float hidden sm:block" style="animation-delay:1.5s">
+          <div class="text-xs text-slate-500 font-medium">RAG lookup</div>
+          <div class="text-sm font-bold">3 rules retrieved</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES STRIP -->
+<section class="py-10">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    <div class="card p-5 reveal"><div class="text-2xl mb-2">📷</div><h3 class="font-bold">Image classification</h3><p class="text-sm text-slate-500 mt-1">Drop a photo; the vision model identifies the item and material.</p></div>
+    <div class="card p-5 reveal" style="transition-delay:.1s"><div class="text-2xl mb-2">🗑️</div><h3 class="font-bold">Bin recommendation</h3><p class="text-sm text-slate-500 mt-1">Colour‑coded bin guidance with prep steps like rinse, flatten, or remove lids.</p></div>
+    <div class="card p-5 reveal" style="transition-delay:.2s"><div class="text-2xl mb-2">💡</div><h3 class="font-bold">Explainable reasons</h3><p class="text-sm text-slate-500 mt-1">Every decision comes with a plain‑language explanation and a source rule.</p></div>
+    <div class="card p-5 reveal" style="transition-delay:.3s"><div class="text-2xl mb-2">⚠️</div><h3 class="font-bold">Hazard handling</h3><p class="text-sm text-slate-500 mt-1">Batteries, electronics, chemicals and sharps trigger special instructions.</p></div>
+  </div>
+</section>
+
+<!-- CLASSIFIER -->
+<section id="classify" class="py-20">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center max-w-2xl mx-auto reveal">
+      <span class="chip bg-eco-100 text-eco-800">Step 1 · Classify</span>
+      <h2 class="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Upload a waste image</h2>
+      <p class="mt-3 text-slate-600">The frontend sends your image to <code class="px-1.5 py-0.5 rounded bg-slate-100 text-xs">POST /api/classify</code> on the Flask backend. If the backend is offline, a built‑in demo model runs locally so you can still explore the experience.</p>
+    </div>
+
+    <div class="mt-12 grid lg:grid-cols-5 gap-8">
+      <!-- Upload -->
+      <div class="lg:col-span-2 card p-6 reveal">
+        <div id="dropzone" class="dropzone rounded-2xl p-6 text-center cursor-pointer bg-eco-50/40 relative min-h-[260px] flex flex-col items-center justify-center">
+          <input id="fileInput" type="file" accept="image/*" class="hidden" />
+          <div id="dropContent">
+            <div class="mx-auto w-16 h-16 rounded-2xl gradient-bg text-white grid place-items-center shadow-lg shadow-eco-500/30 mb-4">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg>
+            </div>
+            <p class="font-semibold">Drag & drop or <span class="text-eco-600 underline">browse</span></p>
+            <p class="text-xs text-slate-500 mt-1">JPG, PNG, WEBP · up to 10 MB</p>
+          </div>
+          <div id="previewWrap" class="hidden absolute inset-0 rounded-2xl overflow-hidden">
+            <img id="previewImg" alt="Preview" class="w-full h-full object-cover" />
+            <div id="scanOverlay" class="hidden absolute inset-0 bg-eco-900/20"><div class="scanline animate-scan"></div></div>
+            <button id="clearBtn" type="button" class="absolute top-2 right-2 bg-white/90 hover:bg-white text-slate-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow">✕ Remove</button>
+          </div>
+        </div>
+        <p id="fileName" class="mt-3 text-xs text-slate-500 truncate"></p>
+
+        <div class="mt-4">
+          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Optional description (helps the model)</label>
+          <input id="hintInput" type="text" placeholder="e.g. old phone charger, greasy pizza box…" class="mt-1.5 w-full rounded-xl border border-eco-200 focus:border-eco-500 focus:ring-2 focus:ring-eco-200 outline-none px-4 py-2.5 text-sm" />
+        </div>
+
+        <button id="classifyBtn" class="mt-5 w-full gradient-bg text-white font-semibold py-3.5 rounded-2xl shadow-lg shadow-eco-500/30 hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2" disabled>
+          <span id="classifyLabel">Classify waste</span>
+          <svg id="spinner" class="hidden animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-opacity=".3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+        </button>
+
+        <div class="mt-5">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">No photo handy? Try a sample</p>
+          <div class="flex flex-wrap gap-2" id="samples">
+            <button data-sample="plastic bottle" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🧴 Plastic bottle</button>
+            <button data-sample="banana peel" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🍌 Banana peel</button>
+            <button data-sample="smartphone" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">📱 Old phone</button>
+            <button data-sample="lithium battery" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🔋 Battery</button>
+            <button data-sample="glass jar" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🫙 Glass jar</button>
+            <button data-sample="pizza box" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🍕 Pizza box</button>
+            <button data-sample="paint can" class="chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">🎨 Paint can</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div class="lg:col-span-3 reveal" style="transition-delay:.1s">
+        <div id="resultEmpty" class="card p-10 h-full min-h-[420px] flex flex-col items-center justify-center text-center">
+          <div class="relative">
+            <span class="absolute inset-0 rounded-full bg-eco-300/60 animate-pulseRing"></span>
+            <div class="relative w-20 h-20 rounded-full bg-white border border-eco-200 grid place-items-center shadow">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#16a356" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/><path d="M10 11v5M14 11v5"/></svg>
+            </div>
+          </div>
+          <h3 class="mt-6 text-xl font-bold">Your result will appear here</h3>
+          <p class="mt-2 text-sm text-slate-500 max-w-sm">Category, recommended bin, confidence score, explanation and any special handling instructions.</p>
+        </div>
+
+        <div id="resultCard" class="hidden card p-6 sm:p-8 h-full">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detected item</div>
+              <h3 id="rItem" class="text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">—</h3>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span id="rCategory" class="chip bg-eco-100 text-eco-800">—</span>
+                <span id="rMaterial" class="chip bg-slate-100 text-slate-700">—</span>
+                <span id="rSource" class="chip bg-sky-100 text-sky-800">—</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Confidence</div>
+              <div id="rConf" class="text-3xl font-extrabold gradient-text">0%</div>
+            </div>
+          </div>
+          <div class="bar mt-4"><div id="rBar"></div></div>
+
+          <div id="rHazard" class="hidden mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5">
+            <div class="flex items-start gap-3">
+              <span class="text-2xl">⚠️</span>
+              <div>
+                <div class="font-bold text-red-700" id="rHazardTitle">Special handling required</div>
+                <ul id="rHazardList" class="mt-2 text-sm text-red-800/90 space-y-1 list-disc pl-5"></ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 grid sm:grid-cols-2 gap-4">
+            <div class="rounded-2xl border border-eco-100 p-5 bg-gradient-to-br from-white to-eco-50/60">
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Recommended bin</div>
+              <div class="mt-3 flex items-center gap-3">
+                <span id="rBinIcon" class="w-14 h-14 rounded-2xl bin-blue text-white grid place-items-center text-2xl shadow-lg">♻</span>
+                <div><div id="rBin" class="font-bold text-lg leading-tight">—</div><div id="rBinSub" class="text-xs text-slate-500 mt-0.5">—</div></div>
+              </div>
+            </div>
+            <div class="rounded-2xl border border-eco-100 p-5 bg-white">
+              <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Prep before disposal</div>
+              <ul id="rPrep" class="mt-3 text-sm space-y-1.5"></ul>
+            </div>
+          </div>
+
+          <div class="mt-5 rounded-2xl border border-eco-100 p-5 bg-white">
+            <div class="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide"><span>💡</span> Why this classification</div>
+            <p id="rReason" class="mt-2 text-sm text-slate-700 leading-relaxed">—</p>
+            <div class="mt-3 flex flex-wrap gap-2" id="rRules"></div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div class="text-xs text-slate-500">Was this correct? <button class="feedback ml-1 font-semibold text-eco-600 hover:underline">👍 Yes</button> · <button class="feedback font-semibold text-slate-600 hover:underline">👎 No</button></div>
+            <div class="flex gap-2">
+              <button id="askAboutBtn" class="text-sm font-semibold px-4 py-2 rounded-xl border border-eco-200 hover:bg-eco-50 transition">Ask a follow‑up →</button>
+              <button id="resetBtn" class="text-sm font-semibold px-4 py-2 rounded-xl gradient-bg text-white shadow hover:opacity-95 transition">Classify another</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ASK (RAG) -->
+<section id="ask" class="py-20 bg-white/60 border-y border-eco-100">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-start">
+    <div class="reveal">
+      <span class="chip bg-sky-100 text-sky-800">Step 2 · Ask</span>
+      <h2 class="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Text‑based waste questions with RAG lookup</h2>
+      <p class="mt-3 text-slate-600">Ask anything like <em>“Can I recycle a greasy pizza box?”</em> The assistant retrieves the most relevant rules from the waste‑disposal knowledge base, then generates a grounded answer with citations — no hallucinated advice.</p>
+      <div class="mt-6 grid sm:grid-cols-3 gap-3 text-sm">
+        <div class="rounded-2xl bg-white border border-eco-100 p-4"><div class="font-bold text-eco-700">1. Retrieve</div><p class="text-slate-500 text-xs mt-1">Query is embedded & matched against KB chunks.</p></div>
+        <div class="rounded-2xl bg-white border border-eco-100 p-4"><div class="font-bold text-eco-700">2. Augment</div><p class="text-slate-500 text-xs mt-1">Top‑k rules are injected into the prompt as context.</p></div>
+        <div class="rounded-2xl bg-white border border-eco-100 p-4"><div class="font-bold text-eco-700">3. Generate</div><p class="text-slate-500 text-xs mt-1">The LLM answers using only retrieved rules, with citations.</p></div>
+      </div>
+      <div class="mt-6">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Suggested questions</p>
+        <div class="flex flex-wrap gap-2" id="suggestions">
+          <button class="sugg chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">Can I recycle a greasy pizza box?</button>
+          <button class="sugg chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">Where do old laptops go?</button>
+          <button class="sugg chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">How to dispose of expired medicine?</button>
+          <button class="sugg chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">Are coffee cups recyclable?</button>
+          <button class="sugg chip bg-white border border-eco-200 hover:border-eco-500 hover:bg-eco-50 transition">What do I do with a broken light bulb?</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-0 overflow-hidden reveal" style="transition-delay:.1s">
+      <div class="px-5 py-4 border-b border-eco-100 flex items-center justify-between bg-gradient-to-r from-eco-50 to-sky-50">
+        <div class="flex items-center gap-3">
+          <span class="w-9 h-9 rounded-xl gradient-bg grid place-items-center text-white text-sm font-bold">E</span>
+          <div><div class="font-bold text-sm">EcoSort Assistant</div><div class="text-xs text-eco-700 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-eco-500"></span>Grounded in 40 disposal rules</div></div>
+        </div>
+        <button id="clearChat" class="text-xs font-semibold text-slate-500 hover:text-slate-800">Clear</button>
+      </div>
+      <div id="chat" class="chat-scroll h-[420px] overflow-y-auto p-5 space-y-4 bg-[#fbfdfc]">
+        <div class="flex gap-3">
+          <span class="w-8 h-8 shrink-0 rounded-lg gradient-bg text-white text-xs font-bold grid place-items-center">E</span>
+          <div class="bg-white border border-eco-100 rounded-2xl rounded-tl-sm px-4 py-3 text-sm max-w-[85%] shadow-sm">Hi! Ask me how to dispose of anything — I'll look up the rules and cite my sources. 🌱</div>
+        </div>
+      </div>
+      <form id="chatForm" class="p-4 border-t border-eco-100 flex gap-2 bg-white">
+        <input id="chatInput" type="text" placeholder="Ask about any waste item…" autocomplete="off" class="flex-1 rounded-xl border border-eco-200 focus:border-eco-500 focus:ring-2 focus:ring-eco-200 outline-none px-4 py-3 text-sm" />
+        <button type="submit" class="gradient-bg text-white font-semibold px-5 rounded-xl shadow hover:opacity-95 transition flex items-center gap-1">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- CATEGORIES -->
+<section id="categories" class="py-20">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center max-w-2xl mx-auto reveal">
+      <span class="chip bg-eco-100 text-eco-800">Waste categories</span>
+      <h2 class="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Seven categories, seven bins</h2>
+      <p class="mt-3 text-slate-600">Colour codes follow common municipal conventions. Local rules vary — the knowledge base can be swapped per city.</p>
+    </div>
+    <div id="categoryGrid" class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"></div>
+  </div>
+</section>
+
+<!-- KNOWLEDGE BASE -->
+<section id="knowledge" class="py-20 bg-white/60 border-y border-eco-100">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 reveal">
+      <div class="max-w-2xl">
+        <span class="chip bg-sky-100 text-sky-800">Knowledge base</span>
+        <h2 class="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Waste‑disposal rules the AI reasons over</h2>
+        <p class="mt-3 text-slate-600">Each rule is a chunk in the vector store. Search below to see the same retrieval the assistant uses (top matches ranked by relevance score).</p>
+      </div>
+      <div class="w-full md:w-96">
+        <div class="relative">
+          <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="kbSearch" type="text" placeholder="Search rules, e.g. battery, glass, oil…" class="w-full rounded-xl border border-eco-200 focus:border-eco-500 focus:ring-2 focus:ring-eco-200 outline-none pl-10 pr-4 py-3 text-sm bg-white" />
+        </div>
+      </div>
+    </div>
+    <div class="mt-8 flex flex-wrap gap-2 reveal" id="kbFilters"></div>
+    <div id="kbGrid" class="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <p id="kbCount" class="mt-4 text-xs text-slate-500"></p>
+  </div>
+</section>
+
+<!-- ROADMAP / BUILD STAGES -->
+<section id="roadmap" class="py-20">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="text-center max-w-2xl mx-auto reveal">
+      <span class="chip bg-eco-100 text-eco-800">Development plan</span>
+      <h2 class="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight">Built in stages — starting with the project folder & Flask</h2>
+      <p class="mt-3 text-slate-600">Frontend: HTML, CSS, JavaScript. Backend: Python + Flask. AI: image/text model. Knowledge base: waste‑disposal rules with RAG retrieval.</p>
+    </div>
+
+    <div class="mt-12 grid lg:grid-cols-5 gap-8">
+      <div class="lg:col-span-2 space-y-2" id="stageTabs">
+        <button data-stage="0" class="tab-btn active w-full text-left rounded-2xl p-4 bg-white border border-eco-100 transition"><div class="text-xs font-semibold opacity-80">Stage 1</div><div class="font-bold">Project setup & Flask install</div></button>
+        <button data-stage="1" class="tab-btn w-full text-left rounded-2xl p-4 bg-white border border-eco-100 hover:bg-eco-50 transition"><div class="text-xs font-semibold opacity-80">Stage 2</div><div class="font-bold">Flask app skeleton & static frontend</div></button>
+        <button data-stage="2" class="tab-btn w-full text-left rounded-2xl p-4 bg-white border border-eco-100 hover:bg-eco-50 transition"><div class="text-xs font-semibold opacity-80">Stage 3</div><div class="font-bold">Image upload & AI classification API</div></button>
+        <button data-stage="3" class="tab-btn w-full text-left rounded-2xl p-4 bg-white border border-eco-100 hover:bg-eco-50 transition"><div class="text-xs font-semibold opacity-80">Stage 4</div><div class="font-bold">Knowledge base & RAG‑style lookup</div></button>
+        <button data-stage="4" class="tab-btn w-full text-left rounded-2xl p-4 bg-white border border-eco-100 hover:bg-eco-50 transition"><div class="text-xs font-semibold opacity-80">Stage 5</div><div class="font-bold">Special handling, polish & deployment</div></button>
+      </div>
+      <div class="lg:col-span-3 card p-6 sm:p-8 reveal" id="stageContent"></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="py-16">
+  <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="relative overflow-hidden rounded-3xl gradient-bg p-10 sm:p-14 text-white text-center shadow-2xl shadow-eco-500/30 reveal">
+      <div class="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/10 blur-2xl"></div>
+      <div class="absolute -bottom-24 -left-16 w-72 h-72 rounded-full bg-white/10 blur-2xl"></div>
+      <h2 class="relative text-3xl sm:text-4xl font-extrabold tracking-tight">Ready to make sorting effortless?</h2>
+      <p class="relative mt-3 text-white/85 max-w-xl mx-auto">Start with a photo. EcoSort AI handles the rest — category, bin, reasons, and safety.</p>
+      <a href="#classify" class="relative inline-flex mt-7 bg-white text-eco-700 font-bold px-7 py-3.5 rounded-2xl shadow-lg hover:-translate-y-0.5 transition">Classify your first item</a>
+    </div>
+  </div>
+</section>
+
+<footer class="border-t border-eco-100 bg-white/70">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid md:grid-cols-3 gap-8 text-sm">
+    <div>
+      <div class="flex items-center gap-2 font-extrabold text-lg"><span class="w-8 h-8 rounded-lg gradient-bg"></span>EcoSort <span class="gradient-text">AI</span></div>
+      <p class="mt-3 text-slate-500 max-w-xs">Smart waste segregation & recycling assistant. Explainable, safety‑first and grounded in real disposal rules.</p>
+    </div>
+    <div>
+      <div class="font-bold mb-3">Product</div>
+      <ul class="space-y-2 text-slate-500"><li><a href="#classify" class="hover:text-eco-600">Image classifier</a></li><li><a href="#ask" class="hover:text-eco-600">Ask the assistant</a></li><li><a href="#knowledge" class="hover:text-eco-600">Knowledge base</a></li><li><a href="#roadmap" class="hover:text-eco-600">Build stages</a></li></ul>
+    </div>
+    <div>
+      <div class="font-bold mb-3">Stack</div>
+      <div class="flex flex-wrap gap-2"><span class="chip bg-slate-100">HTML</span><span class="chip bg-slate-100">CSS</span><span class="chip bg-slate-100">JavaScript</span><span class="chip bg-slate-100">Python</span><span class="chip bg-slate-100">Flask</span><span class="chip bg-slate-100">Vision + LLM</span><span class="chip bg-slate-100">RAG</span></div>
+    </div>
+  </div>
+  <div class="border-t border-eco-100 py-4 text-center text-xs text-slate-500">© <span id="year"></span> EcoSort AI. Disposal rules are illustrative — always check your local council guidance.</div>
+</footer>
+
+<script>
+/* =========================================================
+   DATA: Categories & Knowledge Base (mirrors backend kb.json)
+   ========================================================= */
+const CATEGORIES = {
+  recyclable: { name:'Recyclables', bin:'Blue bin', binClass:'bin-blue', icon:'♻️', desc:'Clean plastics #1/#2/#5, metal cans, foil, cartons.', color:'text-blue-700 bg-blue-50' },
+  paper:      { name:'Paper & Cardboard', bin:'Blue bin (paper stream)', binClass:'bin-blue', icon:'📦', desc:'Dry, clean paper, newspapers, flattened cardboard.', color:'text-blue-700 bg-blue-50' },
+  glass:      { name:'Glass', bin:'Green glass bank / Bottle bin', binClass:'bin-green', icon:'🫙', desc:'Bottles and jars only — not window glass or ceramics.', color:'text-emerald-700 bg-emerald-50' },
+  organic:    { name:'Organic / Compost', bin:'Brown (or green) organics bin', binClass:'bin-brown', icon:'🍃', desc:'Food scraps, peels, coffee grounds, garden waste.', color:'text-amber-800 bg-amber-50' },
+  general:    { name:'General Waste', bin:'Black / grey landfill bin', binClass:'bin-gray', icon:'🗑️', desc:'Non‑recyclable, contaminated or mixed‑material items.', color:'text-slate-700 bg-slate-100' },
+  ewaste:     { name:'E‑Waste', bin:'E‑waste drop‑off / retailer take‑back', binClass:'bin-purple', icon:'🔌', desc:'Phones, laptops, cables, chargers, small appliances.', color:'text-violet-700 bg-violet-50' },
+  hazardous:  { name:'Hazardous', bin:'Household hazardous waste (HHW) facility', binClass:'bin-red', icon:'☣️', desc:'Batteries, paint, chemicals, medicines, sharps, bulbs.', color:'text-red-700 bg-red-50' }
+};
+
+const KB = [
+ { id:'R01', cat:'recyclable', title:'PET plastic bottles (#1)', tags:['plastic','bottle','pet','water','soda','drink'], text:'Empty, rinse and crush PET bottles. Replace the cap loosely — most facilities now accept caps attached. Place in the blue recycling bin.' },
+ { id:'R02', cat:'recyclable', title:'HDPE containers (#2)', tags:['plastic','milk','jug','shampoo','detergent','hdpe'], text:'Milk jugs, detergent and shampoo bottles are HDPE #2. Rinse and recycle in the blue bin. Remove pumps and sprayers — they contain metal springs.' },
+ { id:'R03', cat:'recyclable', title:'Aluminium & steel cans', tags:['can','aluminium','aluminum','steel','tin','soda','beer','food can','metal'], text:'Rinse food and drink cans. Labels can stay on. Do not crush steel food cans flat; aluminium cans may be crushed. Blue bin.' },
+ { id:'R04', cat:'recyclable', title:'Plastic tubs & yoghurt pots (#5)', tags:['tub','yoghurt','yogurt','pot','pp','margarine','plastic'], text:'Polypropylene #5 tubs are recyclable in most programmes. Rinse, remove film lids and place in the blue bin. Check locally for #5 acceptance.' },
+ { id:'R05', cat:'recyclable', title:'Tetra Pak / drink cartons', tags:['carton','juice','milk carton','tetra','pak'], text:'Beverage cartons are recyclable where carton collection exists. Rinse, flatten and push the straw inside. Blue bin or carton bank.' },
+ { id:'R06', cat:'recyclable', title:'Aluminium foil & trays', tags:['foil','tray','aluminium','takeaway'], text:'Clean foil can be recycled if scrunched into a ball at least the size of a fist. Heavily greased foil goes in general waste.' },
+ { id:'R07', cat:'general', title:'Plastic bags & film', tags:['bag','film','wrap','cling','plastic bag','carrier'], text:'Plastic bags and soft film jam sorting machinery. Do NOT put in kerbside recycling. Return to supermarket soft‑plastic collection points, otherwise general waste.' },
+ { id:'R08', cat:'general', title:'Polystyrene / Styrofoam', tags:['polystyrene','styrofoam','foam','packaging','eps'], text:'Expanded polystyrene is rarely recycled kerbside. Place in general waste, or use a dedicated EPS drop‑off if available.' },
+ { id:'R09', cat:'paper', title:'Newspapers, magazines, office paper', tags:['paper','newspaper','magazine','office','printer','mail'], text:'Clean, dry paper goes in the blue bin. Staples and windows on envelopes are fine. Shredded paper should be bagged in paper or composted.' },
+ { id:'R10', cat:'paper', title:'Cardboard boxes', tags:['cardboard','box','carton','amazon','shipping','corrugated'], text:'Flatten boxes and remove excessive tape and plastic inserts. Keep dry — wet cardboard is not recyclable. Blue bin.' },
+ { id:'R11', cat:'organic', title:'Greasy pizza boxes', tags:['pizza','box','greasy','grease','cardboard','oil'], text:'Grease contaminates paper fibres. Tear off the clean lid for recycling; compost the greasy base if your organics programme accepts soiled cardboard, otherwise general waste.' },
+ { id:'R12', cat:'general', title:'Disposable coffee cups', tags:['coffee','cup','paper cup','takeaway','lid'], text:'Most paper coffee cups have a polyethylene lining and are not kerbside recyclable. Use dedicated cup‑recycling points; the plastic lid may be recyclable; sleeve is paper.' },
+ { id:'R13', cat:'general', title:'Receipts & thermal paper', tags:['receipt','thermal','paper'], text:'Thermal receipts are coated with BPA/BPS and should not be recycled or composted. Dispose in general waste.' },
+ { id:'R14', cat:'general', title:'Tissues, napkins & paper towels', tags:['tissue','napkin','paper towel','kitchen roll'], text:'Used tissues and paper towels have short fibres and are usually contaminated. Compost if food‑soiled only (where accepted); otherwise general waste.' },
+ { id:'R15', cat:'glass', title:'Glass bottles & jars', tags:['glass','bottle','jar','wine','beer','jam'], text:'Rinse and remove lids (metal lids go in recycling). Labels can stay. Place in the glass bank or glass bin, sorted by colour where required.' },
+ { id:'R16', cat:'general', title:'Broken window glass, mirrors, Pyrex, ceramics', tags:['window','mirror','pyrex','ceramic','mug','plate','broken glass','drinking glass'], text:'These have different melting points and contaminate glass recycling. Wrap carefully in newspaper, label “broken glass”, and put in general waste.' },
+ { id:'R17', cat:'organic', title:'Fruit & vegetable scraps', tags:['banana','peel','apple','core','vegetable','fruit','scrap','food'], text:'Peels, cores and vegetable trimmings go in the organics/compost bin or a home compost. Remove any produce stickers first.' },
+ { id:'R18', cat:'organic', title:'Coffee grounds & tea bags', tags:['coffee','grounds','tea','bag','filter'], text:'Coffee grounds and paper filters are compostable. Many tea bags contain plastic — check the brand; if unsure, tear open and compost the leaves only.' },
+ { id:'R19', cat:'organic', title:'Meat, bones & dairy', tags:['meat','bone','dairy','cheese','fish','chicken'], text:'Accepted in most municipal organics bins (which are industrially composted) but NOT in home compost. Wrap in newspaper to reduce odour.' },
+ { id:'R20', cat:'organic', title:'Garden waste', tags:['garden','grass','leaves','branch','plant','flowers','yard'], text:'Grass clippings, leaves and small branches go in the garden/organics bin. No soil, stones or treated timber.' },
+ { id:'R21', cat:'general', title:'Compostable & bioplastic packaging (PLA)', tags:['compostable','bioplastic','pla','biodegradable','cup'], text:'PLA only breaks down in industrial composting. Do not put in plastic recycling. Use organics bin only if your council accepts certified compostables; otherwise general waste.' },
+ { id:'R22', cat:'ewaste', title:'Smartphones & tablets', tags:['phone','smartphone','tablet','mobile','iphone','android','cell'], text:'Contains lithium battery, rare metals and personal data. Factory‑reset the device, then take to an e‑waste drop‑off, retailer take‑back or manufacturer programme. Never in any household bin.' },
+ { id:'R23', cat:'ewaste', title:'Laptops & computers', tags:['laptop','computer','pc','desktop','monitor','keyboard','hard drive'], text:'Wipe or remove the storage drive. Recycle via certified e‑waste recycler (WEEE). Monitors may contain mercury or leaded glass — handle intact.' },
+ { id:'R24', cat:'ewaste', title:'Cables, chargers & headphones', tags:['cable','charger','wire','headphone','earbud','usb','adapter','cord'], text:'Small electricals contain recoverable copper. Drop in small‑WEEE bins at supermarkets, libraries or council sites. Not for kerbside bins.' },
+ { id:'R25', cat:'ewaste', title:'Small appliances (kettles, toasters, hair dryers)', tags:['kettle','toaster','appliance','hair dryer','microwave','blender','iron'], text:'Anything with a plug or battery is e‑waste. Take to a household waste recycling centre or arrange retailer take‑back when buying a replacement.' },
+ { id:'R26', cat:'ewaste', title:'Printer ink & toner cartridges', tags:['ink','toner','cartridge','printer'], text:'Return to manufacturer mail‑back schemes or office supply stores. Toner powder is a respiratory irritant — keep sealed.' },
+ { id:'R27', cat:'hazardous', title:'Lithium‑ion & rechargeable batteries', tags:['battery','lithium','li-ion','rechargeable','power bank','vape','e-cigarette'], text:'FIRE RISK: never place in household bins — they ignite in collection trucks. Tape the terminals and take to a battery drop‑off (supermarkets, hardware stores, HHW facility). Swollen batteries: store in sand, do not charge.' },
+ { id:'R28', cat:'hazardous', title:'Alkaline & button‑cell batteries', tags:['battery','aa','aaa','alkaline','button','coin','watch'], text:'Use battery collection points. Button cells may contain mercury or lithium and are a swallowing hazard — keep away from children and tape both sides.' },
+ { id:'R29', cat:'hazardous', title:'Paint, solvents & varnish', tags:['paint','solvent','varnish','thinner','turpentine','can'], text:'Liquid paint is hazardous. Take to a HHW facility or paint reuse scheme. Fully dried, empty water‑based paint cans (lid off) can go in metal recycling in some areas.' },
+ { id:'R30', cat:'hazardous', title:'Expired or unused medicines', tags:['medicine','medication','pills','drugs','pharmacy','expired','tablets'], text:'Return to any pharmacy take‑back scheme. Never flush or bin — they contaminate waterways. Keep in original packaging; blister packs go in general waste once empty.' },
+ { id:'R31', cat:'hazardous', title:'Needles, syringes & sharps', tags:['needle','syringe','sharps','lancet','insulin'], text:'Place in an approved sharps container (available from pharmacies). Return sealed container to pharmacy or council sharps service. Never loose in any bin.' },
+ { id:'R32', cat:'hazardous', title:'Fluorescent tubes & CFL bulbs', tags:['bulb','fluorescent','cfl','tube','light bulb','lamp','mercury'], text:'Contain mercury. Take to a recycling centre or hardware store bulb drop‑off. If broken: ventilate the room 15 min, scoop with card, seal in a jar. Halogen and incandescent bulbs go in general waste; LEDs are e‑waste.' },
+ { id:'R33', cat:'hazardous', title:'Household chemicals & cleaners', tags:['bleach','cleaner','chemical','pesticide','weedkiller','ammonia','drain'], text:'Use up or give away. Leftovers go to a HHW facility. Never mix chemicals. Empty, rinsed plastic bottles can then be recycled.' },
+ { id:'R34', cat:'hazardous', title:'Aerosol cans', tags:['aerosol','spray','deodorant','can','hairspray'], text:'Fully EMPTY aerosols can be recycled with metals (do not pierce or crush). Partially full aerosols are pressurised hazardous waste — HHW facility.' },
+ { id:'R35', cat:'hazardous', title:'Cooking oil & motor oil', tags:['oil','cooking oil','motor oil','engine','grease','fat'], text:'Never pour down drains. Cool cooking oil, seal in a container and take to a recycling centre (converted to biodiesel) or bin small amounts in general waste. Motor oil must go to a garage or HHW site.' },
+ { id:'R36', cat:'hazardous', title:'Gas cylinders & propane canisters', tags:['gas','propane','butane','cylinder','canister','camping'], text:'Explosive hazard. Return refillable cylinders to the supplier. Single‑use camping canisters go to a HHW facility only when completely empty.' },
+ { id:'R37', cat:'general', title:'Textiles & clothing', tags:['clothes','clothing','textile','shirt','shoes','fabric'], text:'Wearable items: donate or use textile banks. Worn‑out textiles: many councils collect for rag recycling. Do not place loose textiles in recycling bins.' },
+ { id:'R38', cat:'general', title:'Nappies, sanitary products & pet waste', tags:['nappy','diaper','sanitary','pet','litter','dog','cat'], text:'Always general waste, securely bagged. Never in recycling or compost — biological contamination.' },
+ { id:'R39', cat:'general', title:'Toothbrushes, pens & mixed‑material items', tags:['toothbrush','pen','razor','toy','mixed'], text:'Items made of fused plastics and metals cannot be separated at facilities. General waste, or specialist take‑back schemes (e.g. TerraCycle).' },
+ { id:'R40', cat:'general', title:'Crisp packets & snack wrappers', tags:['crisp','chip','packet','wrapper','snack','chocolate','sweet'], text:'Metallised plastic film is not kerbside recyclable. Use soft‑plastic supermarket drop‑offs or general waste.' }
+];
+
+/* =========================================================
+   DEMO CLASSIFIER (fallback when Flask backend is offline)
+   Maps keywords (filename / hint / sample) → item profile
+   ========================================================= */
+const ITEM_PROFILES = [
+ { keys:['bottle','pet','water','soda','plastic'], item:'Plastic bottle (PET #1)', material:'Polyethylene terephthalate', cat:'recyclable', rules:['R01'], prep:['Empty and rinse','Crush to save space','Cap on loosely'], reason:'Clear rigid plastic with a screw neck is consistently PET #1, which is widely accepted in kerbside recycling. The model matched bottle geometry and transparency features.' },
+ { keys:['jug','milk','shampoo','detergent'], item:'HDPE container (#2)', material:'High‑density polyethylene', cat:'recyclable', rules:['R02'], prep:['Rinse out residue','Remove pump or sprayer','Leave label on'], reason:'Opaque, flexible plastic containers with a moulded handle are HDPE #2 — a high‑value recyclable.' },
+ { keys:['can','aluminium','aluminum','tin','beer','cola'], item:'Aluminium drink can', material:'Aluminium', cat:'recyclable', rules:['R03'], prep:['Rinse','Crush (aluminium only)'], reason:'Metallic reflectance and cylindrical form indicate an aluminium beverage can, infinitely recyclable and highly valuable to recyclers.' },
+ { keys:['yoghurt','yogurt','tub','pot','margarine'], item:'Plastic tub (PP #5)', material:'Polypropylene', cat:'recyclable', rules:['R04'], prep:['Rinse','Remove film lid'], reason:'Wide‑mouth rigid tubs are typically polypropylene #5, recyclable in most programmes.' },
+ { keys:['carton','juice','tetra'], item:'Beverage carton', material:'Paperboard + PE + Al laminate', cat:'recyclable', rules:['R05'], prep:['Rinse','Flatten','Push straw inside'], reason:'Multilayer cartons are recyclable through dedicated carton streams; laminate layers are separated by hydropulping.' },
+ { keys:['foil','tray'], item:'Aluminium foil', material:'Aluminium', cat:'recyclable', rules:['R06'], prep:['Wipe clean','Scrunch into fist‑sized ball'], reason:'Clean foil is recyclable when balled up so it is not lost through sorting screens.' },
+ { keys:['bag','film','wrap','cling'], item:'Plastic bag / film', material:'LDPE film', cat:'general', rules:['R07'], prep:['Take to supermarket soft‑plastic drop‑off'], reason:'Soft films tangle in material recovery facility machinery, so they are excluded from kerbside recycling.' },
+ { keys:['styrofoam','polystyrene','foam'], item:'Polystyrene packaging', material:'Expanded polystyrene', cat:'general', rules:['R08'], prep:['Break down to save space'], reason:'EPS is 98% air, making it uneconomical to recycle kerbside.' },
+ { keys:['newspaper','magazine','paper','mail','envelope'], item:'Paper', material:'Cellulose fibre', cat:'paper', rules:['R09'], prep:['Keep dry','Remove plastic wrap'], reason:'Clean, dry paper fibres can be repulped up to seven times.' },
+ { keys:['cardboard','box','shipping','amazon'], item:'Cardboard box', material:'Corrugated cardboard', cat:'paper', rules:['R10'], prep:['Flatten','Remove tape & inserts','Keep dry'], reason:'Corrugated board texture detected; clean cardboard is one of the most recycled materials worldwide.' },
+ { keys:['pizza','greasy'], item:'Greasy pizza box', material:'Cardboard (oil‑contaminated)', cat:'organic', rules:['R11','R10'], prep:['Tear off clean lid → recycle','Compost greasy base (if accepted)'], reason:'Oil stains were detected on the base. Grease bonds to paper fibres and cannot be removed during pulping, so the soiled portion is diverted to compost rather than recycling.' },
+ { keys:['coffee cup','cup','takeaway'], item:'Disposable coffee cup', material:'Paper + PE lining', cat:'general', rules:['R12'], prep:['Separate plastic lid','Use cup‑recycling point if available'], reason:'The polyethylene lining fused to the paper cannot be separated in standard paper mills.' },
+ { keys:['receipt','thermal'], item:'Thermal receipt', material:'BPA‑coated paper', cat:'general', rules:['R13'], prep:['Do not compost'], reason:'Thermal coatings contain bisphenols that would contaminate recycled paper products.' },
+ { keys:['tissue','napkin','towel'], item:'Used paper towel / tissue', material:'Short‑fibre paper', cat:'general', rules:['R14'], prep:['Compost only if food‑soiled and accepted'], reason:'Fibres are too short to be recycled again and the item is usually contaminated.' },
+ { keys:['jar','glass','wine','jam'], item:'Glass jar', material:'Soda‑lime glass', cat:'glass', rules:['R15'], prep:['Rinse','Remove metal lid → metal recycling','Sort by colour if required'], reason:'Container glass is 100% recyclable without loss of quality, but must be kept separate from ceramics and window glass.' },
+ { keys:['mirror','window','pyrex','ceramic','mug','plate','drinking glass'], item:'Non‑container glass / ceramic', material:'Borosilicate / ceramic', cat:'general', rules:['R16'], prep:['Wrap in newspaper','Label “broken glass”'], reason:'Different melting point from bottle glass would ruin a recycling batch.' },
+ { keys:['banana','peel','apple','vegetable','fruit','food','scrap'], item:'Fruit peel', material:'Organic matter', cat:'organic', rules:['R17'], prep:['Remove produce sticker'], reason:'Colour, texture and shape indicate organic plant matter, which decomposes into compost and avoids landfill methane.' },
+ { keys:['coffee','grounds','tea'], item:'Coffee grounds', material:'Organic matter', cat:'organic', rules:['R18'], prep:['Include paper filter'], reason:'Nitrogen‑rich organic material ideal for composting.' },
+ { keys:['meat','bone','chicken','fish','cheese'], item:'Meat / bones', material:'Organic (animal)', cat:'organic', rules:['R19'], prep:['Wrap in newspaper','Not for home compost'], reason:'Industrial composting reaches temperatures that safely process animal products.' },
+ { keys:['garden','leaves','grass','plant','flower','branch'], item:'Garden waste', material:'Plant matter', cat:'organic', rules:['R20'], prep:['No soil or stones'], reason:'Green waste is composted or mulched by the council.' },
+ { keys:['phone','smartphone','mobile','iphone','tablet'], item:'Smartphone', material:'Mixed electronics + Li‑ion battery', cat:'ewaste', rules:['R22','R27'], prep:['Back up and factory reset','Remove SIM/SD card','Do not disassemble'], reason:'A rectangular device with screen and ports was detected. It contains a lithium battery (fire risk), precious metals worth recovering, and personal data — three reasons it must never enter household bins.' },
+ { keys:['laptop','computer','monitor','keyboard','pc'], item:'Laptop', material:'Mixed electronics', cat:'ewaste', rules:['R23','R27'], prep:['Wipe or remove drive','Keep battery inside','Transport intact'], reason:'Laptops are covered by WEEE regulations; they contain a large Li‑ion battery and recoverable metals.' },
+ { keys:['cable','charger','wire','headphone','usb','cord','earbud'], item:'Charger / cable', material:'Copper + PVC', cat:'ewaste', rules:['R24'], prep:['Bundle loosely','Small‑WEEE drop‑off'], reason:'Insulated copper wiring detected — valuable metal that is lost if landfilled.' },
+ { keys:['kettle','toaster','appliance','dryer','microwave','blender','iron'], item:'Small appliance', material:'Mixed electronics', cat:'ewaste', rules:['R25'], prep:['Remove any batteries','Retailer take‑back on replacement'], reason:'Anything with a plug qualifies as WEEE and must go to an electrical recycling point.' },
+ { keys:['ink','toner','cartridge','printer'], item:'Printer cartridge', material:'Plastic + ink residue', cat:'ewaste', rules:['R26'], prep:['Keep sealed','Mail‑back scheme'], reason:'Cartridges are remanufactured by producers; toner powder is a respiratory irritant.' },
+ { keys:['lithium','power bank','vape','rechargeable','e-cig'], item:'Lithium‑ion battery', material:'Li‑ion cell', cat:'hazardous', rules:['R27'], prep:['Tape terminals','Battery drop‑off point','Never in household bins'], reason:'Cylindrical/pouch cell with terminals identified. Lithium cells ignite when crushed in collection trucks and cause thousands of waste‑facility fires annually.' },
+ { keys:['battery','aa','aaa','alkaline','button','coin'], item:'Household battery', material:'Alkaline / button cell', cat:'hazardous', rules:['R28','R27'], prep:['Tape both terminals','Battery drop‑off point'], reason:'Batteries leach heavy metals in landfill and pose a fire risk if damaged.' },
+ { keys:['paint','solvent','varnish','thinner'], item:'Paint can', material:'Metal can + liquid paint', cat:'hazardous', rules:['R29'], prep:['Keep lid sealed','HHW facility or paint reuse scheme','Empty dried cans → metal recycling'], reason:'Liquid paint is classified as hazardous because of VOCs and heavy‑metal pigments; it must be kept out of landfill and drains.' },
+ { keys:['medicine','medication','pill','tablet','drug','pharmacy'], item:'Expired medicine', material:'Pharmaceutical', cat:'hazardous', rules:['R30'], prep:['Keep in original packaging','Return to pharmacy'], reason:'Pharmaceuticals contaminate waterways and pose a poisoning risk if landfilled.' },
+ { keys:['needle','syringe','sharp','lancet'], item:'Needle / sharps', material:'Steel + plastic', cat:'hazardous', rules:['R31'], prep:['Approved sharps container only','Return sealed to pharmacy'], reason:'Sharps cause needle‑stick injuries to waste workers and can carry pathogens.' },
+ { keys:['bulb','fluorescent','cfl','tube','lamp','light'], item:'Light bulb', material:'Glass + mercury vapour', cat:'hazardous', rules:['R32'], prep:['Keep intact','Bulb drop‑off at recycling centre','LEDs → e‑waste'], reason:'Spiral/tube shape suggests a CFL or fluorescent bulb, which contains mercury.' },
+ { keys:['bleach','cleaner','chemical','pesticide','weedkiller'], item:'Household chemical', material:'Liquid chemical', cat:'hazardous', rules:['R33'], prep:['Do not mix','Keep sealed & labelled','HHW facility'], reason:'Corrosive/toxic contents must not enter landfill leachate or sewers.' },
+ { keys:['aerosol','spray','deodorant','hairspray'], item:'Aerosol can', material:'Steel/aluminium, pressurised', cat:'hazardous', rules:['R34'], prep:['Empty completely → metal recycling','Partially full → HHW','Never pierce'], reason:'Pressurised canisters can explode in compactors if not empty.' },
+ { keys:['oil','grease','fat','motor'], item:'Used oil', material:'Cooking / motor oil', cat:'hazardous', rules:['R35'], prep:['Cool and seal in a container','Recycling centre or garage'], reason:'One litre of oil can contaminate a million litres of water; it also blocks sewers as fatbergs.' },
+ { keys:['gas','propane','butane','cylinder','canister'], item:'Gas canister', material:'Steel, pressurised', cat:'hazardous', rules:['R36'], prep:['Return refillable cylinders to supplier','HHW only when empty'], reason:'Pressurised flammable gas — explosion hazard in collection vehicles.' },
+ { keys:['clothes','shirt','textile','shoe','fabric','jeans'], item:'Textiles', material:'Fabric', cat:'general', rules:['R37'], prep:['Donate if wearable','Textile bank otherwise'], reason:'Textiles need a separate stream; they contaminate paper and plastic recycling.' },
+ { keys:['nappy','diaper','sanitary','litter'], item:'Nappy / sanitary waste', material:'Absorbent composite', cat:'general', rules:['R38'], prep:['Bag securely'], reason:'Biological contamination makes recycling or composting impossible.' },
+ { keys:['toothbrush','pen','razor','toy'], item:'Mixed‑material item', material:'Fused plastics & metal', cat:'general', rules:['R39'], prep:['Specialist take‑back if available'], reason:'Materials are fused and cannot be mechanically separated.' },
+ { keys:['crisp','chip','wrapper','packet','chocolate','snack'], item:'Snack wrapper', material:'Metallised plastic film', cat:'general', rules:['R40','R07'], prep:['Soft‑plastic supermarket drop‑off'], reason:'Metallised film layers cannot be separated in standard recycling.' }
+];
+
+const HAZARD_NOTES = {
+  ewaste: { title:'E‑waste — do not place in any household bin', items:['Contains lithium batteries and heavy metals (lead, cadmium, mercury).','Wipe personal data before handing over.','Use certified WEEE recyclers, retailer take‑back or council drop‑off.','Keep devices intact — don’t remove or puncture batteries.'] },
+  hazardous: { title:'Hazardous — special handling required', items:['Keep in original, sealed, labelled container.','Never mix with other substances or pour down drains.','Transport upright to a Household Hazardous Waste facility or take‑back point.','Store out of reach of children and away from heat until disposal.'] }
+};
+
+/* =========================================================
+   Utilities
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const escapeHtml = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const tokenize = s => s.toLowerCase().replace(/[^a-z0-9\s\-]/g,' ').split(/\s+/).filter(w => w.length > 1 && !STOP.has(w));
+const STOP = new Set(['the','a','an','is','are','can','i','my','of','to','in','do','with','what','where','how','it','this','that','and','or','for','put','go','goes','should','be','does','old','used','dispose','disposal','recycle','recycled','recyclable','bin','waste','throw','away','into','on','which']);
+const stem = w => w.replace(/(ies)$/,'y').replace(/(es|s)$/,'');
+
+/* RAG-style retrieval: lexical scoring over title/tags/text (mirrors backend embedding search) */
+function retrieve(query, k = 3) {
+  const q = tokenize(query).map(stem);
+  if (!q.length) return [];
+  const scored = KB.map(doc => {
+    const tags = doc.tags.map(t => stem(t.toLowerCase()));
+    const title = tokenize(doc.title).map(stem);
+    const text = tokenize(doc.text).map(stem);
+    let score = 0;
+    q.forEach(w => {
+      if (tags.some(t => t === w || t.includes(w) || w.includes(t))) score += 3;
+      if (title.includes(w)) score += 2.5;
+      if (text.includes(w)) score += 1;
+      if (doc.tags.some(t => t.includes(' ') && query.toLowerCase().includes(t))) score += 2;
+    });
+    return { doc, score };
+  }).filter(r => r.score > 0).sort((a,b) => b.score - a.score);
+  const max = scored.length ? scored[0].score : 1;
+  return scored.slice(0,k).map(r => ({ ...r, rel: Math.min(0.99, 0.55 + 0.44 * (r.score / max)) }));
+}
+
+/* Demo classifier */
+function localClassify(text) {
+  const t = (text || '').toLowerCase();
+  let best = null, bestScore = 0;
+  ITEM_PROFILES.forEach(p => {
+    let s = 0;
+    p.keys.forEach(k => { if (t.includes(k)) s += k.length; });
+    if (s > bestScore) { bestScore = s; best = p; }
+  });
+  let conf;
+  if (!best) {
+    const hits = retrieve(t, 1);
+    if (hits.length) {
+      const d = hits[0].doc;
+      best = { item:d.title, material:'Unknown', cat:d.cat, rules:[d.id], prep:['Follow the cited rule'], reason:d.text };
+      conf = 0.62;
+    } else {
+      best = { item:'Unidentified item', material:'Unknown', cat:'general', rules:[], prep:['When in doubt, keep it out of recycling'], reason:'The model could not confidently identify this item. Contaminating recycling with unknown items can cause whole batches to be rejected, so general waste is the safe default. Try adding a short description.' };
+      conf = 0.41;
+    }
+  } else {
+    conf = Math.min(0.98, 0.78 + bestScore / 60 + Math.random() * 0.08);
+  }
+  return { ...best, confidence: conf };
+}
+
+/* =========================================================
+   Backend detection (Flask) with graceful fallback
+   ========================================================= */
+let backendOnline = false;
+(async function checkBackend() {
+  const el = $('#backendStatus');
+  try {
+    const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 2500);
+    const r = await fetch('/api/health', { signal: ctrl.signal });
+    if (r.ok) { backendOnline = true; }
+  } catch (e) { backendOnline = false; }
+  el.innerHTML = backendOnline
+    ? '<span class="w-2 h-2 rounded-full bg-eco-500"></span>Flask backend online'
+    : '<span class="w-2 h-2 rounded-full bg-amber-400"></span>Demo mode (local model)';
+  el.className = 'hidden sm:inline-flex chip ' + (backendOnline ? 'bg-eco-100 text-eco-800' : 'bg-amber-50 text-amber-800');
+})();
+
+/* =========================================================
+   Classifier UI
+   ========================================================= */
+const dropzone = $('#dropzone'), fileInput = $('#fileInput'), previewWrap = $('#previewWrap'), previewImg = $('#previewImg');
+const classifyBtn = $('#classifyBtn'), hintInput = $('#hintInput');
+let currentFile = null, currentSample = null;
+
+dropzone.addEventListener('click', e => { if (e.target.id !== 'clearBtn') fileInput.click(); });
+['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+dropzone.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+fileInput.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleFile(f); });
+$('#clearBtn').addEventListener('click', e => { e.stopPropagation(); clearFile(); });
+
+function handleFile(f) {
+  if (!f.type.startsWith('image/')) return toast('Please upload an image file.');
+  if (f.size > 10 * 1024 * 1024) return toast('Image must be under 10 MB.');
+  currentFile = f; currentSample = null;
+  const reader = new FileReader();
+  reader.onload = ev => { previewImg.src = ev.target.result; previewWrap.classList.remove('hidden'); $('#dropContent').classList.add('invisible'); };
+  reader.readAsDataURL(f);
+  $('#fileName').textContent = `${f.name} · ${(f.size/1024).toFixed(0)} KB`;
+  classifyBtn.disabled = false;
+}
+function clearFile() {
+  currentFile = null; currentSample = null; fileInput.value = '';
+  previewWrap.classList.add('hidden'); $('#dropContent').classList.remove('invisible'); previewImg.src = '';
+  $('#fileName').textContent = ''; classifyBtn.disabled = !hintInput.value.trim();
+}
+hintInput.addEventListener('input', () => { classifyBtn.disabled = !(currentFile || currentSample || hintInput.value.trim()); });
+
+$$('#samples button').forEach(b => b.addEventListener('click', () => {
+  currentSample = b.dataset.sample; currentFile = null; fileInput.value='';
+  hintInput.value = currentSample;
+  previewWrap.classList.add('hidden'); $('#dropContent').classList.remove('invisible');
+  $('#fileName').textContent = `Sample: ${currentSample}`;
+  classifyBtn.disabled = false;
+  runClassification();
+}));
+
+classifyBtn.addEventListener('click', runClassification);
+
+async function runClassification() {
+  const hint = hintInput.value.trim();
+  const textForModel = [currentFile ? currentFile.name.replace(/\.[a-z0-9]+$/i,'').replace(/[_\-]/g,' ') : '', currentSample || '', hint].join(' ');
+  setLoading(true);
+  let result = null;
+  if (backendOnline) {
+    try {
+      const fd = new FormData();
+      if (currentFile) fd.append('image', currentFile);
+      fd.append('hint', hint || currentSample || '');
+      const r = await fetch('/api/classify', { method:'POST', body: fd });
+      if (r.ok) result = await r.json();
+    } catch (e) { result = null; }
+  }
+  if (!result) {
+    await new Promise(res => setTimeout(res, 1400 + Math.random()*600));
+    result = localClassify(textForModel);
+    result.source = 'Demo model';
+  } else result.source = 'Flask · vision model';
+  setLoading(false);
+  renderResult(result);
+}
+
+function setLoading(on) {
+  classifyBtn.disabled = on;
+  $('#classifyLabel').textContent = on ? 'Analysing image…' : 'Classify waste';
+  $('#spinner').classList.toggle('hidden', !on);
+  $('#scanOverlay').classList.toggle('hidden', !on || !currentFile);
+}
+
+function renderResult(r) {
+  const cat = CATEGORIES[r.cat] || CATEGORIES.general;
+  $('#resultEmpty').classList.add('hidden');
+  const card = $('#resultCard'); card.classList.remove('hidden'); card.classList.add('animate-fadeUp');
+  $('#rItem').textContent = r.item;
+  const catEl = $('#rCategory'); catEl.textContent = `${cat.icon} ${cat.name}`; catEl.className = 'chip ' + cat.color;
+  $('#rMaterial').textContent = r.material;
+  $('#rSource').textContent = r.source || 'Model';
+  const pct = Math.round((r.confidence || 0.5) * 100);
+  $('#rConf').textContent = '0%'; $('#rBar').style.width = '0%';
+  requestAnimationFrame(() => { setTimeout(() => { $('#rBar').style.width = pct + '%'; animateNumber($('#rConf'), pct, '%'); }, 60); });
+  const binIcon = $('#rBinIcon'); binIcon.textContent = cat.icon; binIcon.className = 'w-14 h-14 rounded-2xl text-white grid place-items-center text-2xl shadow-lg ' + cat.binClass;
+  $('#rBin').textContent = cat.bin; $('#rBinSub').textContent = cat.desc;
+  $('#rPrep').innerHTML = (r.prep || []).map(p => `<li class="flex items-start gap-2"><span class="text-eco-600 mt-0.5">✔</span><span>${escapeHtml(p)}</span></li>`).join('') || '<li class="text-slate-500">No prep needed.</li>';
+  $('#rReason').textContent = r.reason;
+  $('#rRules').innerHTML = (r.rules || []).map(id => { const d = KB.find(k => k.id === id); return d ? `<button class="rule-chip chip bg-sky-50 text-sky-800 border border-sky-100 hover:bg-sky-100" data-id="${id}" title="${escapeHtml(d.text)}">📄 ${id} · ${escapeHtml(d.title)}</button>` : ''; }).join('');
+  const hz = $('#rHazard'); const note = HAZARD_NOTES[r.cat];
+  if (note) { hz.classList.remove('hidden'); $('#rHazardTitle').textContent = note.title; $('#rHazardList').innerHTML = note.items.map(i => `<li>${escapeHtml(i)}</li>`).join(''); }
+  else hz.classList.add('hidden');
+  $$('.rule-chip').forEach(b => b.addEventListener('click', () => { $('#kbSearch').value = b.dataset.id; renderKB(); document.getElementById('knowledge').scrollIntoView({behavior:'smooth'}); }));
+  if (window.innerWidth < 1024) card.scrollIntoView({ behavior:'smooth', block:'start' });
+  lastResult = r;
+}
+let lastResult = null;
+$('#resetBtn').addEventListener('click', () => { clearFile(); hintInput.value=''; $('#resultCard').classList.add('hidden'); $('#resultEmpty').classList.remove('hidden'); document.getElementById('classify').scrollIntoView({behavior:'smooth'}); });
+$('#askAboutBtn').addEventListener('click', () => { if (lastResult) { $('#chatInput').value = `How do I dispose of a ${lastResult.item.toLowerCase()}?`; document.getElementById('ask').scrollIntoView({behavior:'smooth'}); setTimeout(() => $('#chatInput').focus(), 500); } });
+$$('.feedback').forEach(b => b.addEventListener('click', () => toast('Thanks — feedback logged for model improvement.')));
+
+function animateNumber(el, target, suffix='') {
+  const start = performance.now(), dur = 900;
+  const step = now => { const p = Math.min(1, (now-start)/dur); const e = 1 - Math.pow(1-p, 3); el.textContent = Math.round(target*e) + suffix; if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+/* =========================================================
+   Chat / RAG UI
+   ========================================================= */
+const chat = $('#chat'), chatForm = $('#chatForm'), chatInput = $('#chatInput');
+chatForm.addEventListener('submit', e => { e.preventDefault(); const q = chatInput.value.trim(); if (!q) return; chatInput.value=''; ask(q); });
+$$('.sugg').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+$('#clearChat').addEventListener('click', () => { chat.innerHTML = ''; addBot('Chat cleared. Ask me anything about waste disposal. 🌱'); });
+
+function addUser(text) {
+  chat.insertAdjacentHTML('beforeend', `<div class="flex justify-end"><div class="gradient-bg text-white rounded-2xl rounded-tr-sm px-4 py-3 text-sm max-w-[85%] shadow">${escapeHtml(text)}</div></div>`);
+  chat.scrollTop = chat.scrollHeight;
+}
+function addBot(html, sources) {
+  const src = sources && sources.length ? `<div class="mt-3 pt-3 border-t border-eco-100"><div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Retrieved sources</div><div class="flex flex-col gap-1.5">${sources.map(s => `<div class="flex items-center justify-between gap-2 text-xs bg-eco-50 rounded-lg px-2.5 py-1.5"><span class="truncate">📄 <b>${s.doc.id}</b> · ${escapeHtml(s.doc.title)}</span><span class="shrink-0 font-semibold text-eco-700">${(s.rel*100).toFixed(0)}%</span></div>`).join('')}</div></div>` : '';
+  const id = 'b' + Date.now();
+  chat.insertAdjacentHTML('beforeend', `<div class="flex gap-3 animate-fadeUp"><span class="w-8 h-8 shrink-0 rounded-lg gradient-bg text-white text-xs font-bold grid place-items-center">E</span><div id="${id}" class="bg-white border border-eco-100 rounded-2xl rounded-tl-sm px-4 py-3 text-sm max-w-[85%] shadow-sm leading-relaxed">${html}${src}</div></div>`);
+  chat.scrollTop = chat.scrollHeight;
+}
+function addTyping() {
+  chat.insertAdjacentHTML('beforeend', `<div id="typing" class="flex gap-3"><span class="w-8 h-8 shrink-0 rounded-lg gradient-bg text-white text-xs font-bold grid place-items-center">E</span><div class="bg-white border border-eco-100 rounded-2xl rounded-tl-sm px-4 py-3 text-sm shadow-sm flex gap-1 items-center"><span class="w-2 h-2 rounded-full bg-eco-400 animate-bounce"></span><span class="w-2 h-2 rounded-full bg-eco-400 animate-bounce" style="animation-delay:.15s"></span><span class="w-2 h-2 rounded-full bg-eco-400 animate-bounce" style="animation-delay:.3s"></span><span class="ml-2 text-xs text-slate-500">retrieving rules…</span></div></div>`);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function ask(q) {
+  addUser(q); addTyping();
+  let answer = null;
+  if (backendOnline) {
+    try { const r = await fetch('/api/ask', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ question:q }) }); if (r.ok) answer = await r.json(); } catch(e){}
+  }
+  if (!answer) { await new Promise(res => setTimeout(res, 900 + Math.random()*500)); answer = localAnswer(q); }
+  $('#typing')?.remove();
+  addBot(answer.html, answer.sources);
+}
+
+function localAnswer(q) {
+  const hits = retrieve(q, 3);
+  if (!hits.length) return { html:`I couldn't find a matching rule in the knowledge base for that. Try naming the item specifically (e.g. “<b>lithium battery</b>” or “<b>glass jar</b>”). When unsure, keep the item out of recycling — contamination can spoil an entire batch.`, sources:[] };
+  const top = hits[0].doc, cat = CATEGORIES[top.cat];
+  const hazard = HAZARD_NOTES[top.cat];
+  let html = `<div class="flex items-center gap-2 mb-2"><span class="w-7 h-7 rounded-lg ${cat.binClass} text-white grid place-items-center text-sm">${cat.icon}</span><div><div class="font-bold leading-tight">${escapeHtml(top.title)}</div><div class="text-xs text-slate-500">${cat.name} → <b>${cat.bin}</b></div></div></div>`;
+  html += `<p>${escapeHtml(top.text)} <span class="text-slate-400 text-xs">[${top.id}]</span></p>`;
+  if (hazard) html += `<div class="mt-2 text-xs rounded-lg bg-red-50 border border-red-100 text-red-800 px-3 py-2">⚠️ <b>${hazard.title}.</b> ${hazard.items[0]}</div>`;
+  const others = hits.slice(1).filter(h => h.doc.cat !== top.cat || h.rel > 0.8);
+  if (others.length) html += `<p class="mt-2 text-xs text-slate-600"><b>Related:</b> ${others.map(h => `${escapeHtml(h.doc.title)} → ${CATEGORIES[h.doc.cat].bin} <span class="text-slate-400">[${h.doc.id}]</span>`).join('; ')}.</p>`;
+  return { html, sources: hits };
+}
+
+/* =========================================================
+   Categories grid
+   ========================================================= */
+$('#categoryGrid').innerHTML = Object.entries(CATEGORIES).map(([key,c], i) => `
+  <div class="card p-6 reveal" style="transition-delay:${i*0.06}s">
+    <div class="flex items-center gap-3">
+      <span class="w-12 h-12 rounded-2xl ${c.binClass} text-white grid place-items-center text-xl shadow-lg">${c.icon}</span>
+      <div><div class="font-bold">${c.name}</div><div class="text-xs text-slate-500">${c.bin}</div></div>
+    </div>
+    <p class="mt-4 text-sm text-slate-600">${c.desc}</p>
+    <div class="mt-4 flex items-center justify-between">
+      <span class="chip ${c.color}">${KB.filter(k=>k.cat===key).length} rules</span>
+      <button class="text-xs font-semibold text-eco-700 hover:underline" data-cat="${key}">Browse →</button>
+    </div>
+  </div>`).join('') + `
+  <div class="card p-6 reveal gradient-bg text-white" style="transition-delay:.45s">
+    <div class="text-2xl">🧭</div>
+    <div class="font-bold mt-3">Not sure?</div>
+    <p class="mt-2 text-sm text-white/85">Snap a photo or ask the assistant. The knowledge base can be localised to your council's rules.</p>
+    <a href="#classify" class="inline-flex mt-4 bg-white text-eco-700 font-semibold text-sm px-4 py-2 rounded-xl">Classify now</a>
+  </div>`;
+$$('#categoryGrid [data-cat]').forEach(b => b.addEventListener('click', () => { kbFilter = b.dataset.cat; $('#kbSearch').value=''; renderKBFilters(); renderKB(); document.getElementById('knowledge').scrollIntoView({behavior:'smooth'}); }));
+
+/* =========================================================
+   Knowledge base browser
+   ========================================================= */
+let kbFilter = 'all';
+function renderKBFilters() {
+  const all = [['all','All'], ...Object.entries(CATEGORIES).map(([k,c]) => [k, `${c.icon} ${c.name}`])];
+  $('#kbFilters').innerHTML = all.map(([k,l]) => `<button data-f="${k}" class="chip transition ${kbFilter===k ? 'gradient-bg text-white shadow' : 'bg-white border border-eco-200 hover:border-eco-500'}">${l}</button>`).join('');
+  $$('#kbFilters button').forEach(b => b.addEventListener('click', () => { kbFilter = b.dataset.f; renderKBFilters(); renderKB(); }));
+}
+function renderKB() {
+  const q = $('#kbSearch').value.trim();
+  let rows;
+  if (q) {
+    const byId = KB.filter(d => d.id.toLowerCase() === q.toLowerCase());
+    rows = byId.length ? byId.map(doc => ({doc, rel:1})) : retrieve(q, 12);
+  } else rows = KB.map(doc => ({ doc, rel:null }));
+  rows = rows.filter(r => kbFilter === 'all' || r.doc.cat === kbFilter);
+  $('#kbGrid').innerHTML = rows.map((r, i) => { const c = CATEGORIES[r.doc.cat]; return `
+    <article class="card p-5 animate-fadeUp" style="animation-delay:${Math.min(i,8)*0.04}s">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-2.5"><span class="w-9 h-9 rounded-xl ${c.binClass} text-white grid place-items-center">${c.icon}</span><div><div class="font-bold text-sm leading-tight">${escapeHtml(r.doc.title)}</div><div class="text-[11px] text-slate-500">${r.doc.id} · ${c.name}</div></div></div>
+        ${r.rel !== null ? `<span class="chip bg-eco-100 text-eco-800">${(r.rel*100).toFixed(0)}% match</span>` : ''}
+      </div>
+      <p class="mt-3 text-sm text-slate-600">${escapeHtml(r.doc.text)}</p>
+      <div class="mt-3 flex items-center justify-between gap-2">
+        <span class="text-xs font-semibold text-slate-700">→ ${c.bin}</span>
+        <button class="text-xs font-semibold text-eco-700 hover:underline" data-ask="${escapeHtml(r.doc.title)}">Ask about this</button>
+      </div>
+    </article>`; }).join('') || `<div class="sm:col-span-2 lg:col-span-3 card p-10 text-center text-slate-500">No rules match “${escapeHtml(q)}”. Try another keyword.</div>`;
+  $('#kbCount').textContent = `${rows.length} of ${KB.length} rules shown${q ? ` · ranked by relevance to “${q}”` : ''}`;
+  $$('#kbGrid [data-ask]').forEach(b => b.addEventListener('click', () => { document.getElementById('ask').scrollIntoView({behavior:'smooth'}); ask(`How do I dispose of ${b.dataset.ask.toLowerCase()}?`); }));
+}
+let kbTimer; $('#kbSearch').addEventListener('input', () => { clearTimeout(kbTimer); kbTimer = setTimeout(renderKB, 180); });
+renderKBFilters(); renderKB();
+
+/* =========================================================
+   Build stages content
+   ========================================================= */
+const STAGES = [
+ { title:'Stage 1 — Project setup & installing Python/Flask', goal:'Create the folder structure, a virtual environment, and install Flask.', steps:['Install Python 3.10+ and verify with <code>python --version</code>.','Create the project folder and a virtual environment.','Install Flask and freeze dependencies.','Create the base folder tree for frontend, backend, models and knowledge base.'],
+   code:`<span class="c"># 1. Create the project folder</span>
+mkdir ecosort-ai && cd ecosort-ai
+
+<span class="c"># 2. Create & activate a virtual environment</span>
+python -m venv venv
+<span class="c"># macOS/Linux</span>
+source venv/bin/activate
+<span class="c"># Windows</span>
+venv\\Scripts\\activate
+
+<span class="c"># 3. Install Flask (+ CORS for the frontend)</span>
+pip install flask flask-cors python-dotenv
+pip freeze > requirements.txt
+
+<span class="c"># 4. Folder structure</span>
+ecosort-ai/
+├── app.py                 <span class="c"># Flask entry point</span>
+├── requirements.txt
+├── .env                   <span class="c"># API keys (never commit)</span>
+├── static/
+│   ├── css/style.css
+│   ├── js/app.js
+│   └── uploads/           <span class="c"># temporary image uploads</span>
+├── templates/
+│   └── index.html         <span class="c"># this UI</span>
+├── ai/
+│   ├── classifier.py      <span class="c"># image/text model wrapper</span>
+│   └── rag.py             <span class="c"># retrieval over the KB</span>
+└── knowledge_base/
+    └── waste_rules.json   <span class="c"># disposal rules (40 to start)</span>` },
+ { title:'Stage 2 — Flask app skeleton & static frontend', goal:'Serve index.html, expose a health endpoint, and wire the frontend fetch calls.', steps:['Create <code>app.py</code> with a root route rendering the template.','Add <code>GET /api/health</code> — the UI uses it to detect the backend (see the status pill in the navbar).','Move CSS/JS into <code>static/</code> and reference with <code>url_for</code>.','Run with <code>flask --app app run --debug</code>.'],
+   code:`<span class="c"># app.py</span>
+<span class="k">from</span> flask <span class="k">import</span> Flask, render_template, jsonify, request
+<span class="k">from</span> flask_cors <span class="k">import</span> CORS
+
+app = Flask(__name__)
+CORS(app)
+app.config[<span class="s">"MAX_CONTENT_LENGTH"</span>] = 10 * 1024 * 1024  <span class="c"># 10 MB</span>
+
+<span class="f">@app.route</span>(<span class="s">"/"</span>)
+<span class="k">def</span> <span class="f">index</span>():
+    <span class="k">return</span> render_template(<span class="s">"index.html"</span>)
+
+<span class="f">@app.route</span>(<span class="s">"/api/health"</span>)
+<span class="k">def</span> <span class="f">health</span>():
+    <span class="k">return</span> jsonify(status=<span class="s">"ok"</span>, version=<span class="s">"1.0"</span>)
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    app.run(debug=<span class="k">True</span>)` },
+ { title:'Stage 3 — Image upload & AI classification API', goal:'Accept an image + optional hint, run the vision/text model, and return category, bin, confidence and reason.', steps:['Validate file type/size, save to a temp path, and pass to <code>ai/classifier.py</code>.','Use a vision model (e.g. a fine‑tuned CNN/ViT on TrashNet, or a multimodal LLM API) returning a JSON schema.','Map the predicted label to a category, bin colour and prep steps.','Attach an explanation and rule IDs so the UI can show “why”.'],
+   code:`<span class="c"># app.py (excerpt)</span>
+<span class="k">from</span> ai.classifier <span class="k">import</span> classify_image
+
+ALLOWED = {<span class="s">"png"</span>, <span class="s">"jpg"</span>, <span class="s">"jpeg"</span>, <span class="s">"webp"</span>}
+
+<span class="f">@app.route</span>(<span class="s">"/api/classify"</span>, methods=[<span class="s">"POST"</span>])
+<span class="k">def</span> <span class="f">classify</span>():
+    img  = request.files.get(<span class="s">"image"</span>)
+    hint = request.form.get(<span class="s">"hint"</span>, <span class="s">""</span>)
+    <span class="k">if</span> img <span class="k">and</span> img.filename.rsplit(<span class="s">"."</span>, 1)[-1].lower() <span class="k">not in</span> ALLOWED:
+        <span class="k">return</span> jsonify(error=<span class="s">"Unsupported file type"</span>), 400
+    result = classify_image(img.stream <span class="k">if</span> img <span class="k">else</span> <span class="k">None</span>, hint)
+    <span class="c"># result = {item, material, cat, confidence, prep, reason, rules}</span>
+    <span class="k">return</span> jsonify(result)
+
+<span class="c"># ai/classifier.py — output schema the frontend expects</span>
+{
+  <span class="s">"item"</span>: <span class="s">"Smartphone"</span>,
+  <span class="s">"material"</span>: <span class="s">"Mixed electronics + Li-ion"</span>,
+  <span class="s">"cat"</span>: <span class="s">"ewaste"</span>,          <span class="c"># recyclable|paper|glass|organic|general|ewaste|hazardous</span>
+  <span class="s">"confidence"</span>: 0.94,
+  <span class="s">"prep"</span>: [<span class="s">"Factory reset"</span>, <span class="s">"Remove SIM"</span>],
+  <span class="s">"reason"</span>: <span class="s">"Contains a lithium battery and personal data…"</span>,
+  <span class="s">"rules"</span>: [<span class="s">"R22"</span>, <span class="s">"R27"</span>]
+}` },
+ { title:'Stage 4 — Knowledge base & RAG‑style lookup', goal:'Load waste rules, embed them, retrieve top‑k for a question, and generate a grounded answer with citations.', steps:['Store rules in <code>waste_rules.json</code> (id, category, title, tags, text).','Embed each rule (sentence‑transformers or an embeddings API) and keep an in‑memory or FAISS index.','On <code>POST /api/ask</code>, embed the question, retrieve top‑3 rules, and prompt the LLM with them as context.','Return the answer plus the retrieved sources & scores so the UI can display citations.'],
+   code:`<span class="c"># ai/rag.py</span>
+<span class="k">import</span> json, numpy <span class="k">as</span> np
+<span class="k">from</span> sentence_transformers <span class="k">import</span> SentenceTransformer
+
+model = SentenceTransformer(<span class="s">"all-MiniLM-L6-v2"</span>)
+RULES = json.load(open(<span class="s">"knowledge_base/waste_rules.json"</span>))
+EMB   = model.encode([r[<span class="s">"title"</span>] + <span class="s">". "</span> + r[<span class="s">"text"</span>] <span class="k">for</span> r <span class="k">in</span> RULES],
+                     normalize_embeddings=<span class="k">True</span>)
+
+<span class="k">def</span> <span class="f">retrieve</span>(question, k=3):
+    q = model.encode([question], normalize_embeddings=<span class="k">True</span>)[0]
+    scores = EMB @ q
+    top = np.argsort(-scores)[:k]
+    <span class="k">return</span> [{<span class="s">"doc"</span>: RULES[i], <span class="s">"rel"</span>: float(scores[i])} <span class="k">for</span> i <span class="k">in</span> top]
+
+<span class="k">def</span> <span class="f">answer</span>(question):
+    hits = retrieve(question)
+    context = <span class="s">"\\n"</span>.join(f<span class="s">"[{h['doc']['id']}] {h['doc']['text']}"</span> <span class="k">for</span> h <span class="k">in</span> hits)
+    prompt = (<span class="s">"Answer ONLY using these waste-disposal rules. "</span>
+              <span class="s">"Cite rule IDs in brackets.\\n"</span> + context + f<span class="s">"\\n\\nQ: {question}"</span>)
+    text = llm(prompt)             <span class="c"># any chat-completion call</span>
+    <span class="k">return</span> {<span class="s">"html"</span>: text, <span class="s">"sources"</span>: hits}` },
+ { title:'Stage 5 — Special handling, polish & deployment', goal:'Make e‑waste/hazardous items unmissable, harden the app, and ship it.', steps:['Add a <code>HAZARD_NOTES</code> map so every e‑waste/hazardous result renders a red safety panel with steps.','Log feedback (👍/👎) to a table for future fine‑tuning; add rate limiting & input validation.','Clean up temp uploads, set <code>MAX_CONTENT_LENGTH</code>, and store keys in <code>.env</code>.','Run with Gunicorn behind Nginx, or deploy to Render/Railway/Fly.io with a <code>Procfile</code>.'],
+   code:`<span class="c"># Production run</span>
+pip install gunicorn
+gunicorn -w 2 -b 0.0.0.0:8000 app:app
+
+<span class="c"># Procfile (Render / Railway / Heroku)</span>
+web: gunicorn app:app
+
+<span class="c"># .env</span>
+OPENAI_API_KEY=sk-...
+FLASK_ENV=production
+
+<span class="c"># Dockerfile</span>
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD [<span class="s">"gunicorn"</span>, <span class="s">"-b"</span>, <span class="s">"0.0.0.0:8000"</span>, <span class="s">"app:app"</span>]` }
+];
+function renderStage(i) {
+  const s = STAGES[i];
+  $('#stageContent').innerHTML = `
+    <div class="flex items-center gap-3"><span class="w-10 h-10 rounded-xl gradient-bg text-white font-bold grid place-items-center">${i+1}</span><h3 class="text-xl font-extrabold tracking-tight">${s.title}</h3></div>
+    <p class="mt-3 text-slate-600 text-sm"><b>Goal:</b> ${s.goal}</p>
+    <ol class="mt-4 space-y-2.5 text-sm">${s.steps.map((st, n) => `<li class="flex gap-3"><span class="shrink-0 w-6 h-6 rounded-full bg-eco-100 text-eco-800 text-xs font-bold grid place-items-center">${n+1}</span><span>${st}</span></li>`).join('')}</ol>
+    <div class="mt-5 relative">
+      <button class="copy-btn absolute top-3 right-3 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded-lg">Copy</button>
+      <pre class="code"><code>${s.code}</code></pre>
+    </div>
+    <div class="mt-5 flex justify-between">
+      <button ${i===0?'disabled':''} class="stage-nav text-sm font-semibold px-4 py-2 rounded-xl border border-eco-200 hover:bg-eco-50 disabled:opacity-40" data-go="${i-1}">← Previous</button>
+      <button ${i===STAGES.length-1?'disabled':''} class="stage-nav text-sm font-semibold px-4 py-2 rounded-xl gradient-bg text-white shadow disabled:opacity-40" data-go="${i+1}">Next stage →</button>
+    </div>`;
+  $$('#stageTabs .tab-btn').forEach((b, n) => b.classList.toggle('active', n === i));
+  $$('.stage-nav').forEach(b => b.addEventListener('click', () => renderStage(+b.dataset.go)));
+  $('.copy-btn').addEventListener('click', e => { navigator.clipboard?.writeText($('#stageContent pre').innerText).then(() => { e.target.textContent='Copied!'; setTimeout(()=> e.target.textContent='Copy', 1500); }); });
+}
+$$('#stageTabs .tab-btn').forEach(b => b.addEventListener('click', () => renderStage(+b.dataset.stage)));
+renderStage(0);
+
+/* =========================================================
+   Misc: reveal on scroll, counters, menu, toast, hero bar
+   ========================================================= */
+const io = new IntersectionObserver(entries => entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('visible'); io.unobserve(en.target); } }), { threshold: .12 });
+$$('.reveal').forEach(el => io.observe(el));
+const cio = new IntersectionObserver(entries => entries.forEach(en => { if (en.isIntersecting) { animateNumber(en.target, +en.target.dataset.count); cio.unobserve(en.target); } }));
+$$('[data-count]').forEach(el => cio.observe(el));
+setTimeout(() => $('#heroBar').style.width = '96%', 400);
+$('#menuBtn').addEventListener('click', () => $('#mobileMenu').classList.toggle('hidden'));
+$$('#mobileMenu a').forEach(a => a.addEventListener('click', () => $('#mobileMenu').classList.add('hidden')));
+$('#year').textContent = new Date().getFullYear();
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-xl animate-fadeUp';
+  t.textContent = msg; document.body.appendChild(t); setTimeout(() => { t.style.opacity = 0; t.style.transition='opacity .4s'; setTimeout(() => t.remove(), 400); }, 2200);
+}
+</script>
+</body>
+</html>
